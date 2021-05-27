@@ -1,8 +1,12 @@
 import paddle
-from paddle.fluid.layers.nn import pad
+from paddle.fluid.layers.nn import embedding, pad
 import paddle.nn
 from paddle.nn import Embedding
 import paddle.nn.functional as F
+import paddle.optimizer
+import numpy as np
+
+import load
 
 
 class SkipGram(paddle.nn.Layer):
@@ -13,11 +17,11 @@ class SkipGram(paddle.nn.Layer):
 
         self.embedding = Embedding(num_embeddings=self.vocab_size,
                                    embedding_dim=self.embedding_size, weight_attr=paddle.nn.initializer.Uniform(
-                                       low=-init_scale/embedding_size, high=init_scale*embedding_size
+                                       low=-init_scale, high=init_scale
                                    ))
         self.embedding_out = Embedding(num_embeddings=self.vocab_size,
                                        embedding_dim=self.embedding_size, weight_attr=paddle.nn.initializer.Uniform(
-                                           low=-init_scale/embedding_size, high=init_scale*embedding_size
+                                           low=-init_scale, high=init_scale
                                        ))
 
     def forward(self, center_words, target_words, label):
@@ -32,3 +36,32 @@ class SkipGram(paddle.nn.Layer):
         loss = F.binary_cross_entropy_with_logits(word_sim, label)
         loss = paddle.mean(loss)
         return pred, loss
+
+
+batch_size = 64
+epoch_num = 1
+embedding_size = 200
+step = 0
+learning_rate = 0.001
+
+
+paddle.set_device('gpu:0')
+
+skip_gram_model = SkipGram(load.vocab_size, embedding_size)
+
+adam = paddle.optimizer.Adam(
+    learning_rate=learning_rate, parameters=skip_gram_model.parameters())
+
+for center_words, target_words, label in load.build_batch(load.skipgram_dataset, batch_size, epoch_num):
+    center_tensor = paddle.to_tensor(center_words)
+    target_tensor = paddle.to_tensor(target_words)
+    label_tensor = paddle.to_tensor(label)
+    pre, loss = skip_gram_model(center_tensor, target_tensor, label_tensor)
+    loss.backward()
+    adam.step()
+    adam.clear_grad()
+    step += 1
+    if step % 10000 == 0:
+        load.get_similar_tokens('movie', 5, skip_gram_model.embedding.weight)
+        load.get_similar_tokens('one', 5, skip_gram_model.embedding.weight)
+        load.get_similar_tokens('chip', 5, skip_gram_model.embedding.weight)

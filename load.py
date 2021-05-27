@@ -70,7 +70,7 @@ def subsampling(corpus, word2id_freq):
 corpus = subsampling(corpus, word2id_freq)
 
 
-def build_data(corpus, max_window_size=3, negative_sample_num=4):
+def build_skipgram_data(corpus, max_window_size=3, negative_sample_num=4):
     dataset = []
 
     for center_word_idx in range(len(corpus)):
@@ -92,8 +92,31 @@ def build_data(corpus, max_window_size=3, negative_sample_num=4):
     return dataset
 
 
+def build_cbow_data(corpus, max_window_size=3, negative_sample_num=4):
+    dataset = []
+
+    for center_word_idx in range(len(corpus)):
+        window_size = random.randint(1, max_window_size)
+        start_idx = max(0, center_word_idx - window_size)
+        end_idx = min(len(corpus), center_word_idx + window_size)
+        center_word = corpus[center_word_idx]
+        context_word_candidates = [corpus[idx] for idx in range(
+            start_idx, end_idx) if not idx == center_word_idx]
+
+        for context_word in context_word_candidates:
+            dataset.append((context_word, center_word, 1))
+            i = 0
+            while i < negative_sample_num:
+                negative_word = random.randint(1, vocab_size - 1)
+                if negative_word is not center_word:
+                    dataset.append((context_word, negative_word, 0))
+                    i += 1
+    return dataset
+
+
 corpus_light = corpus[:int(len(corpus) * 0.2)]
-dataset = build_data(corpus_light)
+skipgram_dataset = build_skipgram_data(corpus_light)
+cbow_dataset = build_cbow_data(corpus_light)
 
 
 def build_batch(dataset, batch_size, epoch_num):
@@ -108,9 +131,25 @@ def build_batch(dataset, batch_size, epoch_num):
             target_word_batch.append(target_word)
             label_batch.append(label)
             if len(center_word_batch) == batch_size:
-                yield np.array(center_word_batch), np.array(target_word_batch), np.array(label_batch)
+                yield np.array(center_word_batch).astype('int64'), \
+                    np.array(target_word_batch).astype('int64'), \
+                    np.array(label_batch).astype('float32')
                 center_word_batch = []
                 target_word_batch = []
                 label_batch = []
     if len(center_word_batch) > 0:
-        yield np.array(center_word_batch), np.array(target_word_batch), np.array(label_batch)
+        yield np.array(center_word_batch).astype('int64'), \
+            np.array(target_word_batch).astype('int64'), \
+            np.array(label_batch).astype('float32')
+
+
+def get_similar_tokens(word, top, embed):
+    W = embed.numpy()
+    x = W[word2id_dict[word]]
+    cos = np.dot(W, x) / np.sqrt(np.sum(W * W, axis=1) * np.sum(x * x) + 1e-9)
+    flat = cos.flatten()
+    indices = np.argpartition(flat, -top)[-top:]
+    indices = indices[np.argsort(-flat[indices])]
+    for i in indices:
+        print('for word %s, the similar word is %s' %
+              (word, str(id2word_dict[i])))
