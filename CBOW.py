@@ -45,7 +45,7 @@ step = 0
 learning_rate = 0.001
 
 
-paddle.set_device('gpu:0')
+# paddle.set_device('gpu:0')
 
 cbow_model = CBOW(load.vocab_size, embedding_size)
 
